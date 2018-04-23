@@ -1,7 +1,7 @@
 from peewee import *
 import datetime
-from flask.ext.login import UserMixin
-from flask.ext.bcrypt import generate_password_hash
+from flask_login import UserMixin
+from flask_bcrypt import generate_password_hash
 
 DATABASE = SqliteDatabase('social.db')
 
@@ -26,15 +26,36 @@ class User(UserMixin, Model):  # From more to less specific
             cls.create(
                 username=username,
                 email=email,
-                password=password,
+                password=generate_password_hash(password),
                 is_admin=admin
             )
         except IntegrityError:  # Meaning a field already exits
             raise ValueError("User already exists")
+
+    def get_posts(self):
+        return Post.select().where(Post.user == self)
+
+    def get_stream(self):
+        return Post.select().where(
+            (Post.user == self)
+        )
+
+
+class Post(Model):
+    timestamp = DateTimeField(
+        default=datetime.datetime.now)
+    user = ForeignKeyField(
+        model=User,
+        backref='posts'
+    )
+    content = TextField()
+
+    class Meta:
+        database = DATABASE
+        order_by = ('-timestamp',)
 
 
 def initialize():
     DATABASE.connect()
     DATABASE.create_tables([User], safe=True)
     DATABASE.close()
-
