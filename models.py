@@ -23,12 +23,13 @@ class User(UserMixin, Model):  # From more to less specific
     @classmethod
     def create_user(cls, username, email, password, admin=False):
         try:
-            cls.create(
-                username=username,
-                email=email,
-                password=generate_password_hash(password),
-                is_admin=admin
-            )
+            with DATABASE.transaction():
+                cls.create(
+                    username=username,
+                    email=email,
+                    password=generate_password_hash(password),
+                    is_admin=admin
+                )
         except IntegrityError:  # Meaning a field already exits
             raise ValueError("User already exists")
 
@@ -38,6 +39,26 @@ class User(UserMixin, Model):  # From more to less specific
     def get_stream(self):
         return Post.select().where(
             (Post.user == self)
+        )
+
+    def following(self):
+        """the user we are following"""
+        return (
+            User.select().join(
+                Relationship, on=Relationship.to_user
+            ).where(
+                Relationship.from_user == self
+            )
+        )
+
+    def followers(self):
+        """the user following the current user"""
+        return (
+            User.select().join(
+                Relationship, on=Relationship.from_user
+            ).where(
+                Relationship.to_user == self
+            )
         )
 
 
@@ -55,7 +76,18 @@ class Post(Model):
         order_by = ('-timestamp',)
 
 
+class Relationship(Model):
+    from_user = ForeignKeyField(User, related_name='relationships')
+    to_user = ForeignKeyField(User, related_name='related_to')
+
+    class Meta:
+        database = DATABASE
+        indexes = (
+            (('from_user', 'to_user'), True),
+        )
+
+
 def initialize():
     DATABASE.connect()
-    DATABASE.create_tables([User], safe=True)
+    DATABASE.create_tables([User, Post, Relationship], safe=True)
     DATABASE.close()

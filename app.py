@@ -1,7 +1,7 @@
 from flask import (Flask, g, render_template, flash,
                    redirect, url_for)
 from flask_login import (LoginManager, login_user,
-                             logout_user, login_required, current_user)
+                         logout_user, login_required, current_user)
 from flask_bcrypt import check_password_hash
 
 import forms
@@ -86,7 +86,23 @@ def logout():
 
 @app.route('/')
 def index():
-    return 'hey'
+    stream = models.Post.select().limit(100)
+    return render_template('stream.html', stream=stream)
+
+
+@app.route('/stream')
+@app.route('/stream/<username>')
+def stream(username=None):
+    template = 'stream.html'
+    if username and username != current_user.username:
+        user = models.User.select().where(models.User.username ** username).get()
+        stream = user.posts.limit(100)
+    else:
+        stream = current_user.get_stream().limit(100)
+        user = current_user
+    if username:
+        template = 'user_stream.html'
+    return render_template(template, stream=stream, user=user)
 
 
 @app.route('/new_post', methods=('GET', 'POST'))
@@ -101,8 +117,50 @@ def post():
     return render_template('post.html', form=form)
 
 
+@app.route('/follow/<username>')
+@login_required
+def follow(username):
+    try:
+        to_user = models.User.get(models.User.username**username)
+    except models.DoesNotExist:
+        pass
+    else:
+        try:
+            models.Relationship.create(
+                from_user=g.user._get_current_object(),
+                to_user=to_user
+            )
+        except models.IntegrityError:
+            pass
+        else:
+            flash("You are now following {}!".format(to_user.username), "success")
+    return redirect(url_for('stream', username=to_user.username))
+
+
+@app.route('/unfollow/<username>')
+@login_required
+def unfollow(username):
+    try:
+        to_user = models.User.get(models.User.username**username)
+    except models.DoesNotExist:
+        pass
+    else:
+        try:
+            models.Relationship.get(
+                from_user=g.user._get_current_object(),
+                to_user=to_user
+            ).delete_instance()
+        except models.IntegrityError:
+            pass
+        else:
+            flash("You have unfollowing {}!".format(to_user.username), "success")
+    return redirect(url_for('stream', username=to_user.username))
+
+
+
 if __name__ == "__main__":
     models.initialize()
+
     try:
         models.User.create_user(
             username='yggarcia',
